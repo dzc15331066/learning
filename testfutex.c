@@ -19,18 +19,19 @@
 
 static int futex(int *uaddr, int futex_op, int val, const struct timespec *timeout, int *uaddr2, int val3)
 {
-    return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr, val3);
+    return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
 }
 
 static void lock(int *futexp, unsigned int id)
 {
     int s;
     int oldval = *futexp;
-    //unsigned int assume_other_waiters = 0;
+    unsigned int assume_other_waiters = 0;
+    
     while(1) {
         if(oldval==0){
-            if(__sync_bool_compare_and_swap(futexp,0,id)){
-                //printf("%u,lock\n",id);
+            if(__sync_bool_compare_and_swap(futexp,0,id|assume_other_waiters)){
+                printf("%u,lock\n",id);
                 break;
             }
                 
@@ -43,24 +44,28 @@ static void lock(int *futexp, unsigned int id)
             }
             oldval |= FUTEX_WAITERS;
         }
-        //assume_other_waiters |= FUTEX_WAITERS;
+        assume_other_waiters |= FUTEX_WAITERS;
+        
         s = futex(futexp, FUTEX_WAIT, oldval, NULL, NULL, 0);
+        //printf("%d\n",oldval);
         if(s == -1 && errno != EAGAIN){
             errExit("futex-FUTEX_WAIT");
         }
         oldval = *futexp;
     }
+    //printf("%u,lock,oldval: 0x%x\n",id,oldval);
 }
 
 static void unlock(int *futexp, unsigned int id)
 {
     int s;
     int oldval = *futexp;
-    if((oldval & FUTEX_TID_MASK) != id){
+    if((int)(oldval & FUTEX_TID_MASK) != id){
+        printf("not eq\n");
         return;
     }
-    if(__sync_lock_test_and_set(futexp, 0)/* & FUTEX_WAITERS*/){
-        //printf("%u,unlock\n",id);
+    if(__sync_lock_test_and_set(futexp, 0) & FUTEX_WAITERS){
+        //printf("%u,unlock, oldval: 0x%x\n",id, oldval);
         s = futex(futexp, FUTEX_WAKE, 1, NULL, NULL, 0);
         if(s == -1){
             errExit("futex-FUTEX_WAKE");
@@ -97,7 +102,7 @@ int main(int argc, char const *argv[])
     time_t t1, t2;
     time(&t1);
     for(i = 0; i < N; i++){
-        ids[i]=i;
+        ids[i]=i+1;
         pthread_create(&tids[i],NULL,task,&ids[i]);
     }
     for(i = 0; i < N; i++){
