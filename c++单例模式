@@ -1,3 +1,4 @@
+```
 template<class T>
 class Singleton
 {
@@ -27,3 +28,5 @@ private:
 };
 
 template<class T>T* Singleton<T>::m_instance = NULL;
+
+```
